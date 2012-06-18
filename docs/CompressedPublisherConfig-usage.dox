@@ -1,9 +1,0 @@
-\subsubsection usage Usage
-\verbatim
-<node name="CompressedPublisher" pkg="compressed_depth_image_transport" type="CompressedPublisher">
-  <param name="depth_max" type="double" value="10.0" />
-  <param name="depth_quantization" type="double" value="100.0" />
-  <param name="png_level" type="int" value="9" />
-</node>
-\endverbatim
-
