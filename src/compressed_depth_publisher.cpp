@@ -135,6 +135,19 @@ void CompressedDepthPublisher::publish(const sensor_msgs::Image& message, const 
       ROS_ERROR("%s", e.msg.c_str());
     }
 
+    unsigned short depthMaxUShort = static_cast<unsigned short>(config_.depth_max*1000.0f);
+
+    // Matrix iterators
+    MatIterator_<unsigned short> itDepthImg = cv_ptr->image.begin<unsigned short>(),
+                             itDepthImg_end = cv_ptr->image.end<unsigned short>();
+
+    // Max depth filter
+    for (; itDepthImg != itDepthImg_end; ++itDepthImg)
+    {
+      if (*itDepthImg > depthMaxUShort)
+        *itDepthImg = 0;
+    }
+
     // Compress raw depth image
     if (cv::imencode(".png", cv_ptr->image, compressedImage, params))
     {

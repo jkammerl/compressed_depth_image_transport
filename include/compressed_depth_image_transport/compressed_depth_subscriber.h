@@ -10,7 +10,7 @@ public:
 
   virtual std::string getTransportName() const
   {
-    return "compressed";
+    return "compressedDepth";
   }
 
 protected:
