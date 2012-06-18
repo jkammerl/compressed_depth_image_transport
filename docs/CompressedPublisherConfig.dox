@@ -1,0 +1,8 @@
+\subsubsection parameters ROS parameters
+
+Reads and maintains the following parameters on the ROS server
+
+- \b "~depth_max" : \b [double] Maximum depth value (meter)  min: 1.0, default: 10.0, max: 100.0
+- \b "~depth_quantization" : \b [double] Depth value at which the sensor accuracy is 1 m (Kinect: >75) min: 1.0, default: 100.0, max: 150.0
+- \b "~png_level" : \b [int] PNG compression level min: 1, default: 9, max: 9
+
