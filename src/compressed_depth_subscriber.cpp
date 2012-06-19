@@ -43,27 +43,33 @@ void CompressedDepthSubscriber::internalCallback(const sensor_msgs::CompressedIm
     const vector<uint8_t> imageData(message->data.begin() + sizeof(compressionConfig), message->data.end());
 
     // Depth map decoding
+    float depthQuantA, depthQuantB;
 
-    if (message->data.size() > 8)
+    // Read quantization parameters
+    depthQuantA = compressionConfig.depthParam[0];
+    depthQuantB = compressionConfig.depthParam[1];
+
+    if (enc::bitDepth(image_encoding) == 32)
     {
-      float depthQuantA, depthQuantB;
-
-      // Read quantization parameters
-      depthQuantA = compressionConfig.depthParam[0];
-      depthQuantB = compressionConfig.depthParam[1];
-
-      // Decode image data
-      cv::Mat decompressed = cv::imdecode(imageData, CV_LOAD_IMAGE_UNCHANGED);
-
-      if (enc::bitDepth(image_encoding) == 32)
+      cv::Mat decompressed;
+      try
       {
+        // Decode image data
+        decompressed = cv::imdecode(imageData, CV_LOAD_IMAGE_UNCHANGED);
+      }
+      catch (cv::Exception& e)
+      {
+        ROS_ERROR("%s", e.what());
+      }
 
-        // Allocate floating point image
-        int rows = decompressed.rows;
-        int cols = decompressed.cols;
+      size_t rows = decompressed.rows;
+      size_t cols = decompressed.cols;
+
+      if ((rows > 0) && (cols > 0))
+      {
         cv_ptr->image = Mat(rows, cols, CV_32FC1);
 
-        // Depth depth conversion
+        // Depth conversion
         MatIterator_<float> itDepthImg = cv_ptr->image.begin<float>(),
                             itDepthImg_end = cv_ptr->image.end<float>();
         MatConstIterator_<unsigned short> itInvDepthImg = decompressed.begin<unsigned short>(),
@@ -81,16 +87,30 @@ void CompressedDepthSubscriber::internalCallback(const sensor_msgs::CompressedIm
             *itDepthImg = std::numeric_limits<float>::quiet_NaN();
           }
         }
-      }
-      else
-      {
-        // Decode raw image
-        cv_ptr->image = cv::imdecode(imageData, CV_LOAD_IMAGE_UNCHANGED);
+
+        // Publish message to user callback
+        user_cb(cv_ptr->toImageMsg());
       }
     }
+    else
+    {
+      // Decode raw image
+      try
+      {
+        cv_ptr->image = cv::imdecode(imageData, CV_LOAD_IMAGE_UNCHANGED);
+      }
+      catch (cv::Exception& e)
+      {
+        ROS_ERROR("%s", e.what());
+      }
 
-    // Publish message to user callback
-    user_cb(cv_ptr->toImageMsg());
+      size_t rows = cv_ptr->image.rows;
+      size_t cols = cv_ptr->image.cols;
+
+      if ((rows > 0) && (cols > 0))
+        // Publish message to user callback
+        user_cb(cv_ptr->toImageMsg());
+    }
   }
 }
 

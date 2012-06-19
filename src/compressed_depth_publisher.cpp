@@ -72,53 +72,71 @@ void CompressedDepthPublisher::publish(const sensor_msgs::Image& message, const 
     float depthMax = config_.depth_max;
 
     // OpenCV-ROS bridge
-    cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(message);
+    cv_bridge::CvImagePtr cv_ptr;
+    try
+    {
+      cv_ptr = cv_bridge::toCvCopy(message);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("%s", e.what());
+    }
 
     const Mat& depthImg = cv_ptr->image;
-    size_t rows = cv_ptr->image.rows;
-    size_t cols = cv_ptr->image.cols;
+    size_t rows = depthImg.rows;
+    size_t cols = depthImg.cols;
 
-    // Allocate matrix for inverse depth (disparity) coding
-    Mat invDepthImg(rows, cols, CV_16UC1);
-
-    // Inverse depth quantization parameters
-    float depthQuantA = depthZ0 * (depthZ0 + 1.0f);
-    float depthQuantB = 1.0f - depthQuantA / depthMax;
-
-    // Matrix iterators
-    MatConstIterator_<float> itDepthImg = depthImg.begin<float>(),
-                             itDepthImg_end = depthImg.end<float>();
-    MatIterator_<unsigned short> itInvDepthImg = invDepthImg.begin<unsigned short>(),
-                                 itInvDepthImg_end = invDepthImg.end<unsigned short>();
-
-    // Quantization
-    for (; (itDepthImg != itDepthImg_end) && (itInvDepthImg != itInvDepthImg_end); ++itDepthImg, ++itInvDepthImg)
+    if ((rows > 0) && (cols > 0))
     {
-      // check for NaN & max depth
-      if (*itDepthImg < depthMax)
+      // Allocate matrix for inverse depth (disparity) coding
+      Mat invDepthImg(rows, cols, CV_16UC1);
+
+      // Inverse depth quantization parameters
+      float depthQuantA = depthZ0 * (depthZ0 + 1.0f);
+      float depthQuantB = 1.0f - depthQuantA / depthMax;
+
+      // Matrix iterators
+      MatConstIterator_<float> itDepthImg = depthImg.begin<float>(),
+                               itDepthImg_end = depthImg.end<float>();
+      MatIterator_<unsigned short> itInvDepthImg = invDepthImg.begin<unsigned short>(),
+                                   itInvDepthImg_end = invDepthImg.end<unsigned short>();
+
+      // Quantization
+      for (; (itDepthImg != itDepthImg_end) && (itInvDepthImg != itInvDepthImg_end); ++itDepthImg, ++itInvDepthImg)
       {
-        *itInvDepthImg = depthQuantA / *itDepthImg + depthQuantB;
+        // check for NaN & max depth
+        if (*itDepthImg < depthMax)
+        {
+          *itInvDepthImg = depthQuantA / *itDepthImg + depthQuantB;
+        }
+        else
+        {
+          *itInvDepthImg = 0;
+        }
       }
-      else
+
+      // Add coding parameters to header
+      compressionConfig.depthParam[0] = depthQuantA;
+      compressionConfig.depthParam[1] = depthQuantB;
+
+      try
       {
-        *itInvDepthImg = 0;
+        // Compress quantized disparity image
+        if (cv::imencode(".png", invDepthImg, compressedImage, params))
+        {
+          float cRatio = (float)(cv_ptr->image.rows * cv_ptr->image.cols * cv_ptr->image.elemSize())
+              / (float)compressedImage.size();
+          ROS_DEBUG("Compressed Depth Image Transport - Compression: 1:%.2f (%lu bytes)", cRatio, compressedImage.size());
+        }
+        else
+        {
+          ROS_ERROR("cv::imencode (png) failed on input image");
+        }
       }
-    }
-
-    // Add coding parameters to header
-    compressionConfig.depthParam[0] = depthQuantA;
-    compressionConfig.depthParam[1] = depthQuantB;
-
-    // Compress quantized disparity image
-    if (cv::imencode(".png", invDepthImg, compressedImage, params))
-    {
-      float cRatio = (float)(cv_ptr->image.rows * cv_ptr->image.cols * cv_ptr->image.elemSize())
-          / (float)compressedImage.size();
-      ROS_DEBUG( "Compressed Depth Image Transport - Compression: 1:%.2f (%lu bytes)", cRatio, compressedImage.size());
-    }
-    else
-    {
-      ROS_ERROR("cv::imencode (png) failed on input image");
+      catch (cv::Exception& e)
+      {
+        ROS_ERROR("%s", e.msg.c_str());
+      }
     }
   }
   // Raw depth map compression
@@ -135,45 +153,53 @@ void CompressedDepthPublisher::publish(const sensor_msgs::Image& message, const 
       ROS_ERROR("%s", e.msg.c_str());
     }
 
-    unsigned short depthMaxUShort = static_cast<unsigned short>(config_.depth_max*1000.0f);
+    const Mat& depthImg = cv_ptr->image;
+    size_t rows = depthImg.rows;
+    size_t cols = depthImg.cols;
 
-    // Matrix iterators
-    MatIterator_<unsigned short> itDepthImg = cv_ptr->image.begin<unsigned short>(),
-                             itDepthImg_end = cv_ptr->image.end<unsigned short>();
+    if ((rows > 0) && (cols > 0))
+    {
+      unsigned short depthMaxUShort = static_cast<unsigned short>(config_.depth_max * 1000.0f);
 
-    // Max depth filter
-    for (; itDepthImg != itDepthImg_end; ++itDepthImg)
-    {
-      if (*itDepthImg > depthMaxUShort)
-        *itDepthImg = 0;
-    }
+      // Matrix iterators
+      MatIterator_<unsigned short> itDepthImg = cv_ptr->image.begin<unsigned short>(),
+                                    itDepthImg_end = cv_ptr->image.end<unsigned short>();
 
-    // Compress raw depth image
-    if (cv::imencode(".png", cv_ptr->image, compressedImage, params))
-    {
-      float cRatio = (float)(cv_ptr->image.rows * cv_ptr->image.cols * cv_ptr->image.elemSize())
-          / (float)compressedImage.size();
-      ROS_DEBUG(
-          "Compressed Depth Image Transport - Compression: 1:%.2f (%lu bytes)", cRatio, compressedImage.size());
-    }
-    else
-    {
-      ROS_ERROR("cv::imencode (png) failed on input image");
+      // Max depth filter
+      for (; itDepthImg != itDepthImg_end; ++itDepthImg)
+      {
+        if (*itDepthImg > depthMaxUShort)
+          *itDepthImg = 0;
+      }
+
+      // Compress raw depth image
+      if (cv::imencode(".png", cv_ptr->image, compressedImage, params))
+      {
+        float cRatio = (float)(cv_ptr->image.rows * cv_ptr->image.cols * cv_ptr->image.elemSize())
+            / (float)compressedImage.size();
+        ROS_DEBUG("Compressed Depth Image Transport - Compression: 1:%.2f (%lu bytes)", cRatio, compressedImage.size());
+      }
+      else
+      {
+        ROS_ERROR("cv::imencode (png) failed on input image");
+      }
     }
   }
   else
     ROS_ERROR("Compressed Depth Image Transport - Compression requires single-channel 32bit-floating point or 16bit raw depth images (input format is: %s).", message.encoding.c_str());
 
-  // add configuration to binary output
-  compressed.data.resize(sizeof(ConfigHeader));
-  memcpy(&compressed.data[0], &compressionConfig, sizeof(ConfigHeader));
+  if (compressedImage.size() > 0)
+  {
+    // Add configuration to binary output
+    compressed.data.resize(sizeof(ConfigHeader));
+    memcpy(&compressed.data[0], &compressionConfig, sizeof(ConfigHeader));
 
-  // add compressed binary data to messages
+    // Add compressed binary data to messages
+    compressed.data.insert(compressed.data.end(), compressedImage.begin(), compressedImage.end());
 
-  compressed.data.insert(compressed.data.end(), compressedImage.begin(), compressedImage.end());
-
-  // Publish message
-  publish_fn(compressed);
+    // Publish message
+    publish_fn(compressed);
+  }
 
 }
 
