@@ -7,7 +7,7 @@
   </description>
   <author>Julius Kammerl</author>
   <license>BSD</license>
-  <review status="Doc reviewed" notes="2010/10/10"/>
+  <review status="unreviewed" notes="2010/10/10"/>
   <url>http://www.ros.org/wiki/compressed_depth_image_transport</url>
   <depend package="image_transport"/>
   <depend package="cv_bridge"/>
